@@ -1,0 +1,15 @@
+services:
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: local-vault
+    user: "0:0"
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./vault/config:/vault/config
+      - ./vault/data:/vault/data
+      - ./vault/logs:/vault/logs
+    command: vault server -config=/vault/config/vault.hcl

@@ -1,0 +1,6 @@
+# Vault runtime data
+vault/data/
+vault/logs/
+
+# Sensitive local bootstrap material
+.vault/
