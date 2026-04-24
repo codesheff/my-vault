@@ -4,3 +4,7 @@ vault/logs/
 
 # Sensitive local bootstrap material
 .vault/
+
+# Local Python virtual environment
+.venv/
+PLAN.md
