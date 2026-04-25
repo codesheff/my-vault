@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devpod
+  namespace: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devpod
+  template:
+    metadata:
+      labels:
+        app: devpod
+    spec:
+      securityContext:
+        runAsUser: 7401038
+        runAsGroup: 7401038
+        fsGroup: 7401038
+      containers:
+        - name: devpod
+          # Replace with your registry path after building and pushing the devpod image.
+          # Build: docker build -t devpod:latest k8s/devpod/
+          # Push:  docker tag devpod:latest <registry>/devpod:latest
+          image: devpod:latest
+          imagePullPolicy: Never   # remove or change to IfNotPresent when using a registry
+          env:
+            # Default Vault address for in-cluster access.
+            # Override with VAULT_ADDR if needed.
+            - name: VAULT_ADDR
+              value: "http://vault.vault.svc.cluster.local:8200"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /home/z4701038-779/workspace
+      volumes:
+        - name: workspace
+          emptyDir: {}

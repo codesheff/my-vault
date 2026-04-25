@@ -1,0 +1,13 @@
+# Headless service for devpod — enables direct pod DNS resolution.
+# VS Code remote connections are outbound tunnels from the pod; no inbound
+# service port is required for normal use. This service is provided for
+# operators who prefer kubectl port-forward for direct access.
+apiVersion: v1
+kind: Service
+metadata:
+  name: devpod
+  namespace: vault
+spec:
+  selector:
+    app: devpod
+  clusterIP: None

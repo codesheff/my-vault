@@ -1,48 +1,69 @@
 #!/usr/bin/env bash
+# verify.sh — end-to-end smoke test for Vault on Kubernetes.
+#
+# Prerequisites:
+#   VAULT_ADDR  must be set to the reachable Vault endpoint, e.g.:
+#               http://<node-ip>:32200        (NodePort, from host)
+#               http://127.0.0.1:8200         (after running scripts/port-forward.sh)
+#               http://vault.vault.svc.cluster.local:8200  (from devpod)
+#
+#   .vault/init.json must exist with the JSON output from `vault operator init`.
+#
+# Usage:
+#   export VAULT_ADDR=http://127.0.0.1:8200
+#   ./scripts/verify.sh
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-step() {
-  echo "[STEP] $1"
-}
+step() { echo "[STEP] $1"; }
+pass() { echo "[PASS] $1"; }
+fail() { echo "[FAIL] $1"; exit 1; }
 
-pass() {
-  echo "[PASS] $1"
-}
+: "${VAULT_ADDR:?Set VAULT_ADDR to the Vault endpoint (e.g. http://127.0.0.1:8200)}"
 
-fail() {
-  echo "[FAIL] $1"
-  exit 1
-}
-
-step "Start Vault"
-docker compose up -d >/dev/null
-pass "Vault container running"
+step "Check Vault is reachable at ${VAULT_ADDR}"
+curl -fsS "${VAULT_ADDR}/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200" >/dev/null \
+  || fail "Cannot reach Vault at ${VAULT_ADDR}"
+pass "Vault is reachable"
 
 step "Ensure init metadata exists"
-if [[ ! -f .vault/init.json && -f .vault/init.txt ]]; then
+if [[ (! -f .vault/init.json || ! -s .vault/init.json) && -f .vault/init.txt ]]; then
   cp .vault/init.txt .vault/init.json
 fi
-[[ -f .vault/init.json ]] || fail "Missing .vault/init.json (initialize Vault first)"
+[[ -f .vault/init.json ]] || fail "Missing .vault/init.json — run 'vault operator init' against ${VAULT_ADDR} and save the output there"
+
+# Validate that init metadata is parseable and contains a token.
+jq -e . .vault/init.json >/dev/null 2>&1 || fail ".vault/init.json is not valid JSON"
+jq -e '(.root_token // "") | length > 0' .vault/init.json >/dev/null 2>&1 \
+  || fail ".vault/init.json is missing root_token"
 pass "Init metadata ready"
 
-export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN="$(jq -r '.root_token' .vault/init.json)"
 
 step "Ensure Vault is unsealed"
-status_json="$(docker compose exec -T vault sh -lc 'export VAULT_ADDR=http://127.0.0.1:8200; vault status -format=json' 2>/dev/null || true)"
-sealed="true"
-if [[ -n "$status_json" ]]; then
-  sealed="$(printf '%s' "$status_json" | jq -r '.sealed')"
-fi
+status_json="$(curl -fsS "${VAULT_ADDR}/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200" || echo '{}')"
+sealed="$(curl -fsS "${VAULT_ADDR}/v1/sys/seal-status" | jq -r '.sealed')"
 
 if [[ "$sealed" == "true" ]]; then
-  k1="$(jq -r '.unseal_keys_b64[0]' .vault/init.json)"
-  k2="$(jq -r '.unseal_keys_b64[1]' .vault/init.json)"
-  k3="$(jq -r '.unseal_keys_b64[2]' .vault/init.json)"
-  docker compose exec -T vault sh -lc "export VAULT_ADDR=http://127.0.0.1:8200; vault operator unseal '$k1' >/dev/null; vault operator unseal '$k2' >/dev/null; vault operator unseal '$k3' >/dev/null"
+  # Support both init output formats:
+  # - API init: keys_base64
+  # - vault CLI init: unseal_keys_b64
+  key_field="$(jq -r 'if (.keys_base64 // []) | length >= 3 then "keys_base64" elif (.unseal_keys_b64 // []) | length >= 3 then "unseal_keys_b64" else "" end' .vault/init.json)"
+  [[ -n "$key_field" ]] || fail ".vault/init.json is missing unseal keys (expected keys_base64 or unseal_keys_b64)"
+
+  k1="$(jq -r --arg f "$key_field" '.[$f][0]' .vault/init.json)"
+  k2="$(jq -r --arg f "$key_field" '.[$f][1]' .vault/init.json)"
+  k3="$(jq -r --arg f "$key_field" '.[$f][2]' .vault/init.json)"
+  [[ -n "$k1" && -n "$k2" && -n "$k3" ]] || fail "Unseal keys are empty in .vault/init.json"
+
+  for key in "$k1" "$k2" "$k3"; do
+    curl -fsS -X PUT \
+      -H "Content-Type: application/json" \
+      -d "{\"key\": \"${key}\"}" \
+      "${VAULT_ADDR}/v1/sys/unseal" >/dev/null
+  done
 fi
 pass "Vault unsealed"
 
@@ -79,27 +100,11 @@ python examples/python/http_write_secret.py >/dev/null
 python examples/python/http_read_secret.py >/dev/null
 pass "Python raw HTTP examples passed"
 
-step "Restart Vault"
-docker compose down >/dev/null
-docker compose up -d >/dev/null
-pass "Vault restarted"
-
-step "Verify Vault is initialized and sealed after restart"
-post_restart_status="$(docker compose exec -T vault sh -lc 'export VAULT_ADDR=http://127.0.0.1:8200; vault status -format=json' 2>/dev/null || true)"
-printf '%s' "$post_restart_status" | jq -e '.initialized == true and .sealed == true' >/dev/null || fail "Expected initialized=true and sealed=true"
-pass "Restart state verified"
-
-step "Unseal after restart"
-k1="$(jq -r '.unseal_keys_b64[0]' .vault/init.json)"
-k2="$(jq -r '.unseal_keys_b64[1]' .vault/init.json)"
-k3="$(jq -r '.unseal_keys_b64[2]' .vault/init.json)"
-docker compose exec -T vault sh -lc "export VAULT_ADDR=http://127.0.0.1:8200; vault operator unseal '$k1' >/dev/null; vault operator unseal '$k2' >/dev/null; vault operator unseal '$k3' >/dev/null"
-pass "Unseal after restart complete"
-
-step "Verify secret persistence with host-based Bash example"
-export VAULT_TOKEN="$(jq -r '.root_token' .vault/init.json)"
-bash examples/bash/read_secret.sh >/dev/null
-pass "Secret persists across restart"
-
 echo ""
 echo "All checks passed."
+echo ""
+echo "To verify persistence across pod restarts:"
+echo "  1. Delete the vault pod:  kubectl delete pod vault-0 -n vault"
+echo "  2. Wait for it to restart: kubectl rollout status statefulset/vault -n vault"
+echo "  3. Unseal:  ./scripts/verify.sh   (it will unseal automatically using .vault/init.json)"
+echo "  4. Re-run read example:  bash examples/bash/read_secret.sh"
