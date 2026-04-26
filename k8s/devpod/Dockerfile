@@ -13,7 +13,7 @@
 FROM registry.access.redhat.com/ubi9/ubi:latest
 
 # ── System dependencies ──────────────────────────────────────────────────────
-RUN dnf install -y \
+RUN dnf install -y --allowerasing \
       python3 \
       python3-pip \
       curl \
@@ -47,7 +47,7 @@ RUN curl -fsSL \
 # Downloads the official Microsoft VS Code CLI for Linux x64.
 # The `code tunnel` command allows VS Code desktop to connect to this container.
 RUN curl -fsSL \
-      "https://code.visualstudio.com/sha/download?build=stable&os=cli-linux-x64" \
+      "https://update.code.visualstudio.com/latest/cli-linux-x64/stable" \
       -o /tmp/vscode-cli.tar.gz \
     && tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin/ \
     && rm /tmp/vscode-cli.tar.gz \

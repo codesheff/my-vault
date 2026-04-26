@@ -82,6 +82,12 @@ export VAULT_ADDR=http://${NODE_IP}:32200
 In a separate terminal:
 
 ```bash
+./scripts/port-forward.sh --kube-context docker-desktop
+```
+
+If you only have one relevant kube context, you can omit `--kube-context`:
+
+```bash
 ./scripts/port-forward.sh
 ```
 
@@ -188,7 +194,7 @@ export VAULT_ADDR=http://127.0.0.1:8200   # adjust as needed
 
 ## devpod — UBI 9 Development Container
 
-`devpod` is a UBI 9 container with Python, uv, and the VS Code remote server.
+`devpod` is a UBI 9 container with Python, uv, the Vault CLI, and the VS Code remote server.
 It runs as user `z4701038-779` and can reach Vault via in-cluster DNS.
 
 ### Build the devpod image
@@ -203,7 +209,7 @@ For a cluster that cannot pull from a local daemon (e.g., kind), load the image:
 kind load docker-image devpod:latest
 ```
 
-Or push to a registry and update the image field in `k8s/devpod/deployment.yaml`.
+Or push to a registry, update the image field in `k8s/devpod/deployment.yaml`, and change `imagePullPolicy` from `Never` to `IfNotPresent`.
 
 ### Deploy devpod
 
@@ -234,6 +240,14 @@ Open a shell inside the pod:
 kubectl exec -it -n vault deploy/devpod -- bash
 ```
 
+Clone the repo into the workspace (the workspace volume is ephemeral; do this once per pod lifetime):
+
+```bash
+cd ~/workspace
+git clone <your-repo-url> my-vault
+cd my-vault
+```
+
 Inside the pod, `VAULT_ADDR` is pre-set to `http://vault.vault.svc.cluster.local:8200`.
 Set your token and run the same examples:
 
@@ -246,9 +260,8 @@ bash examples/bash/read_secret.sh
 For Python, create a venv:
 
 ```bash
-cd ~/workspace
 uv venv .venv && source .venv/bin/activate
-uv pip install hvac requests
+uv pip install -r requirements.txt
 python examples/python/hvac_write_read.py
 ```
 
@@ -277,4 +290,5 @@ kubectl rollout status statefulset/vault -n vault
 | `connection refused` on `VAULT_ADDR` | Check NodePort with `kubectl get svc -n vault`; or run `./scripts/port-forward.sh` |
 | Vault sealed after pod restart | Expected — run `./scripts/verify.sh` to unseal via API |
 | devpod `code tunnel` not found | Rebuild the devpod image; ensure the VS Code CLI download succeeded during `docker build` |
+| devpod workspace empty after pod restart | The workspace volume is `emptyDir` — re-clone the repo into `~/workspace` after each pod restart |
 

@@ -11,6 +11,7 @@ The secrets must persist across restarts
 ## Supporting Notes1
 
 - For guidance on how `README.md` should be structured and maintained, consult [AGENTS_INFO/AGENTS_NOTES_ON_README.md](AGENTS_INFO/AGENTS_NOTES_ON_README.md).
+- For WSL2 + Docker Desktop environments where `kubectl` wraps `kubectl.exe`, `VAULT_ADDR` and port-forward must be set differently — see [AGENTS_INFO/AGENTS_NOTES_ON_WSL2_VAULT_ACCESS.md](AGENTS_INFO/AGENTS_NOTES_ON_WSL2_VAULT_ACCESS.md).
 
 
 When using python, use a local venv created using the uv command
