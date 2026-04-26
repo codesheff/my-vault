@@ -15,6 +15,11 @@ Sealing is a security feature, not an error. The unseal keys are held separately
 **When to (re)seal manually:** If you suspect the node is compromised, or before planned maintenance where you want to guarantee no reads can occur. Run:
 
 ```bash
+# Using the helper script (recommended)
+export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
+./scripts/vault-seal.sh seal
+
+# Or directly via the API
 curl -fsS -X PUT \
   -H "X-Vault-Token: ${VAULT_TOKEN}" \
   "${VAULT_ADDR}/v1/sys/seal"
@@ -138,7 +143,13 @@ export VAULT_ADDR=http://${NODE_IP}:32200
 
 If the previous `seal-status` check returned `"sealed": false`, skip this section and go directly to section 2.4.
 
-The fastest way — `verify.sh` detects the sealed state and unseals automatically:
+The fastest way — use `vault-seal.sh` (reads keys from `.vault/init.json` automatically):
+
+```bash
+./scripts/vault-seal.sh unseal
+```
+
+Alternatively, `verify.sh` detects the sealed state and unseals automatically, then runs the smoke test:
 
 ```bash
 export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
@@ -271,6 +282,95 @@ To revoke a token when done:
 ```bash
 curl -fsS -X POST \
   -H "X-Vault-Token: ${BATCH_TOKEN}" \
+  "${VAULT_ADDR}/v1/auth/token/revoke-self"
+```
+
+---
+
+---
+
+## 4. Token and Policy Management
+
+Use `scripts/create-token.sh` to generate a scoped token for any Vault path and access level.
+The script creates the policy automatically if it does not already exist.
+
+### 4.1 Prerequisites
+
+```bash
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
+```
+
+From **devpod**, `VAULT_ADDR` is pre-set to `http://vault.vault.svc.cluster.local:8200`.
+
+### 4.2 Create a read-only token
+
+```bash
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access read
+```
+
+The derived policy will be named `secret-data-chg-automation-live-read` and grants
+`read` and `list` capabilities on that path.
+
+### 4.3 Create a write token
+
+```bash
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access write
+```
+
+Grants `create`, `update`, `read`, and `list` on the path.
+
+### 4.4 Create a full read-write-delete token
+
+```bash
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access readwrite
+```
+
+Grants `create`, `update`, `read`, `list`, and `delete`.
+
+### 4.5 Custom TTL and policy name
+
+```bash
+# 8-hour read token
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access read \
+  --ttl 8h
+
+# Explicit policy name (useful if you want to share a policy across multiple tokens)
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access read \
+  --policy-name chg-automation-live-reader
+```
+
+### 4.6 Access levels reference
+
+| --access   | Capabilities granted                              |
+|---|---|
+| `read`     | read, list                                        |
+| `write`    | create, update, read, list                        |
+| `readwrite`| create, update, read, list, delete                |
+
+### 4.7 Policy re-use
+
+If you call `create-token.sh` with the same `--path` and `--access` a second time the
+existing policy is reused — a new policy is **not** duplicated.
+Each call always creates a **new token**.
+
+### 4.8 Revoke a token when done
+
+The script prints the revocation command for convenience. To revoke manually:
+
+```bash
+curl -fsS -X POST \
+  -H "X-Vault-Token: ${TOKEN_TO_REVOKE}" \
   "${VAULT_ADDR}/v1/auth/token/revoke-self"
 ```
 

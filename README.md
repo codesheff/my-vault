@@ -192,6 +192,25 @@ export VAULT_ADDR=http://127.0.0.1:8200   # adjust as needed
 ./scripts/verify.sh
 ```
 
+## Seal / Unseal Vault
+
+`scripts/vault-seal.sh` provides a single command for seal, unseal, and status checks.
+The `unseal` subcommand reads keys automatically from `.vault/init.json`.
+
+```bash
+export VAULT_ADDR=http://127.0.0.1:8200
+
+# Check current seal state
+./scripts/vault-seal.sh status
+
+# Unseal (reads keys from .vault/init.json automatically)
+./scripts/vault-seal.sh unseal
+
+# Seal (requires a token with sys/seal capability)
+export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
+./scripts/vault-seal.sh seal
+```
+
 ## devpod — UBI 9 Development Container
 
 `devpod` is a UBI 9 container with Python, uv, the Vault CLI, and the VS Code remote server.
@@ -281,6 +300,43 @@ kubectl rollout status statefulset/vault -n vault
 - `.vault/init.json` contains unseal keys and the root token. **Do not commit it.**
 - For non-demo use, rotate the root token and configure appropriate Vault policies.
 - The StatefulSet runs as root (`runAsUser: 0`) to avoid raft data permission issues on local clusters. For production, use an init container to `chown /vault/data` to uid 100 and remove the root override.
+
+## Token and Policy Management
+
+`scripts/create-token.sh` creates a scoped Vault token for any path and access level.
+It automatically creates the required policy if it does not already exist.
+
+```bash
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
+
+# Read-only token for a path
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access read
+
+# Write (create/update + read) token for a path
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access write
+
+# Full read-write-delete token for a path
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access readwrite
+
+# Custom TTL (default is 24h)
+./scripts/create-token.sh \
+  --path secret/data/chg-automation/live \
+  --access read \
+  --ttl 8h
+```
+
+The script prints the token, its policy name, and revocation instructions.
+The policy is reused on subsequent calls with the same path and access level.
+
+The same command works from inside **devpod** — `VAULT_ADDR` is already set there
+to `http://vault.vault.svc.cluster.local:8200`.
 
 ## Troubleshooting
 

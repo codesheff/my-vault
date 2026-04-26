@@ -35,3 +35,12 @@ It should have the latest available versions of
 
 It should run as user z4701038-779
 
+
+## Additional Scripts
+Provide a mechanism to allow us to easily generate tokens and policies
+e.g I want to get a new token that will allow me to write to kv/data/chg-automation/live
+Create the token and if required a policy to allow that.
+and
+e.g I want to get a new token that will allow me to read only to kv/data/chg-automation/live
+Create the token and if required a policy to allow that.
+
