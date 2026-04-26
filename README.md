@@ -211,6 +211,74 @@ export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
 ./scripts/vault-seal.sh seal
 ```
 
+## Vault CLI Quick Reference
+
+Use the Vault CLI for interactive admin and troubleshooting tasks.
+
+### Install Vault CLI on host (Linux)
+
+If `vault` is not found on your host shell, install it and verify:
+
+```bash
+# install via your distro package manager or from HashiCorp release binaries
+vault version
+```
+
+Inside `devpod`, the Vault CLI is already installed.
+
+### Configure CLI environment (host)
+
+```bash
+# run in a separate terminal if needed
+./scripts/port-forward.sh
+
+# in your working terminal
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=$(jq -r '.root_token' .vault/init.json)
+```
+
+### Core commands
+
+```bash
+# health / auth checks
+vault status
+vault token lookup
+
+# seal/unseal
+vault operator seal
+vault operator unseal <key-1>
+vault operator unseal <key-2>
+vault operator unseal <key-3>
+```
+
+### KV v2 read/write
+
+For CLI `kv` commands, use the logical mount path (`secret/...`) rather than API path (`secret/data/...`).
+
+```bash
+vault kv put secret/chg-automation/live username=alice password=example
+vault kv get secret/chg-automation/live
+```
+
+### Policy and token examples
+
+Create `policy.hcl`:
+
+```hcl
+path "secret/data/chg-automation/live" {
+  capabilities = ["read"]
+}
+```
+
+Apply policy and create token:
+
+```bash
+vault policy write chg-automation-live-read policy.hcl
+vault token create -policy=chg-automation-live-read -ttl=1h
+```
+
+For scripted policy+token generation, use `./scripts/create-token.sh`.
+
 ## devpod — UBI 9 Development Container
 
 `devpod` is a UBI 9 container with Python, uv, the Vault CLI, and the VS Code remote server.
